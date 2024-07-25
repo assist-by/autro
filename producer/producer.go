@@ -14,6 +14,8 @@ import (
 const (
 	binanceKlineAPI = "https://api.binance.com/api/v3/klines"
 	kafkaTopic      = "btcusdt-1m-candles"
+	maxRetries      = 5
+	retryDelay      = 5 * time.Second
 )
 
 type CandleData struct {
@@ -86,10 +88,23 @@ func produceToKafka(producer sarama.SyncProducer, candle *CandleData) error {
 	return err
 }
 
-func main() {
+func connectProducer(brokers []string) (sarama.SyncProducer, error) {
 	config := sarama.NewConfig()
 	config.Producer.Return.Successes = true
-	producer, err := sarama.NewSyncProducer([]string{kafkaBroker}, config)
+
+	for i := 0; i < maxRetries; i++ {
+		producer, err := sarama.NewSyncProducer(brokers, config)
+		if err == nil {
+			return producer, nil
+		}
+		fmt.Printf("Failed to connect to Kafka, retrying in %v... (attempt %d/%d)\n", retryDelay, i+1, maxRetries)
+		time.Sleep(retryDelay)
+	}
+	return nil, fmt.Errorf("failed to connect to Kafka after %d attempts", maxRetries)
+}
+
+func main() {
+	producer, err := connectProducer([]string{kafkaBroker})
 	if err != nil {
 		panic(err)
 	}

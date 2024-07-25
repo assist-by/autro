@@ -12,6 +12,8 @@ import (
 
 const (
 	kafkaTopic = "btcusdt-1m-candles"
+	maxRetries = 5
+	retryDelay = 5 * time.Second
 )
 
 type CandleData struct {
@@ -34,9 +36,23 @@ func init() {
 	}
 }
 
-func main() {
+func connectConsumer(brokers []string) (sarama.Consumer, error) {
 	config := sarama.NewConfig()
-	consumer, err := sarama.NewConsumer([]string{kafkaBroker}, config)
+
+	for i := 0; i < 5; i++ {
+		consumer, err := sarama.NewConsumer(brokers, config)
+		if err == nil {
+			return consumer, nil
+		}
+		fmt.Printf("Failed to connect to Kafka, retrying in 5 seconds... (attempt %d/5)\n", i+1)
+		time.Sleep(5 * time.Second)
+	}
+	return nil, fmt.Errorf("failed to connect to Kafka after 5 attempts")
+}
+
+func main() {
+
+	consumer, err := connectConsumer([]string{kafkaBroker})
 	if err != nil {
 		panic(err)
 	}
