@@ -38,8 +38,8 @@ func init() {
 	}
 }
 
-func fetchBTCCandleData() (*CandleData, error) {
-	url := fmt.Sprintf("%s?symbol=BTCUSDT&interval=1m&limit=1", binanceKlineAPI)
+func fetchBTCCandleData() ([]CandleData, error) {
+	url := fmt.Sprintf("%s?symbol=BTCUSDT&interval=1m&limit=200", binanceKlineAPI)
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, err
@@ -57,23 +57,23 @@ func fetchBTCCandleData() (*CandleData, error) {
 		return nil, err
 	}
 
-	if len(klines) == 0 {
-		return nil, fmt.Errorf("no kline data received")
+	candles := make([]CandleData, len(klines))
+	for i, kline := range klines {
+		candles[i] = CandleData{
+			OpenTime:  int64(kline[0].(float64)),
+			Open:      kline[1].(string),
+			High:      kline[2].(string),
+			Low:       kline[3].(string),
+			Close:     kline[4].(string),
+			Volume:    kline[5].(string),
+			CloseTime: int64(kline[6].(float64)),
+		}
 	}
 
-	kline := klines[0]
-	candle := &CandleData{
-		OpenTime: int64(kline[0].(float64)),
-		Open:     kline[1].(string),
-		High:     kline[2].(string),
-		Low:      kline[3].(string),
-		Close:    kline[4].(string),
-	}
-
-	return candle, nil
+	return candles, nil
 }
 
-func produceToKafka(producer sarama.SyncProducer, candle *CandleData) error {
+func produceToKafka(producer sarama.SyncProducer, candle CandleData) error {
 	jsonData, err := json.Marshal(candle)
 	if err != nil {
 		return err
@@ -110,22 +110,20 @@ func main() {
 	}
 	defer producer.Close()
 
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		candle, err := fetchBTCCandleData()
-		if err != nil {
-			fmt.Printf("Error fetching candle data: %v\n", err)
-		} else {
-			err = produceToKafka(producer, candle)
-			if err != nil {
-				fmt.Printf("Error producing to Kafka: %v\n", err)
-			} else {
-				fmt.Println("Successfully sent candle data to Kafka")
-			}
-		}
-
-		<-ticker.C
+	candles, err := fetchBTCCandleData()
+	if err != nil {
+		fmt.Printf("Error fetching candle data: %v\n", err)
+		return
 	}
+
+	for _, candle := range candles {
+		err = produceToKafka(producer, candle)
+		if err != nil {
+			fmt.Printf("Error producing to Kafka: %v\n", err)
+		} else {
+			fmt.Printf("Successfully sent candle data to Kafka: OpenTime %v\n", candle.OpenTime)
+		}
+	}
+
+	fmt.Println("Finished sending all candle data to Kafka")
 }
