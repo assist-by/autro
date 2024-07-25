@@ -11,8 +11,7 @@ import (
 )
 
 const (
-	kafkaTopic  = "btcusdt-1m-candles"
-	kafkaBroker = "localhost:29092"
+	kafkaTopic = "btcusdt-1m-candles"
 )
 
 type CandleData struct {
@@ -24,6 +23,15 @@ type CandleData struct {
 	NumberOfTrades           int
 	TakerBuyBaseAssetVolume  string
 	TakerBuyQuoteAssetVolume string
+}
+
+var kafkaBroker string
+
+func init() {
+	kafkaBroker = os.Getenv("KAFKA_BROKER")
+	if kafkaBroker == "" {
+		kafkaBroker = "localhost:29092" // 기본값 설정
+	}
 }
 
 func main() {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -13,7 +14,6 @@ import (
 const (
 	binanceKlineAPI = "https://api.binance.com/api/v3/klines"
 	kafkaTopic      = "btcusdt-1m-candles"
-	kafkaBroker     = "localhost:29092"
 )
 
 type CandleData struct {
@@ -25,6 +25,15 @@ type CandleData struct {
 	NumberOfTrades           int
 	TakerBuyBaseAssetVolume  string
 	TakerBuyQuoteAssetVolume string
+}
+
+var kafkaBroker string
+
+func init() {
+	kafkaBroker = os.Getenv("KAFKA_BROKER")
+	if kafkaBroker == "" {
+		kafkaBroker = "localhost:29092" // 기본값 설정
+	}
 }
 
 func fetchBTCCandleData() (*CandleData, error) {
