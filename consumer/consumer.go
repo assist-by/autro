@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -36,7 +39,20 @@ type TechnicalIndicators struct {
 	ParabolicSAR float64
 }
 
-var kafkaBroker string
+type SignalConditions struct {
+	Long  [3]bool
+	Short [3]bool
+}
+
+var (
+	kafkaBroker string
+	httpClient  = &http.Client{Timeout: 10 * time.Second}
+)
+
+var (
+	discordWebhookURL string
+	slackWebhookURL   string
+)
 
 func init() {
 	kafkaBroker = os.Getenv("KAFKA_BROKER")
@@ -45,6 +61,7 @@ func init() {
 	}
 }
 
+// / consumer와 연결함수
 func connectConsumer(brokers []string) (sarama.Consumer, error) {
 	config := sarama.NewConfig()
 	config.Consumer.Return.Errors = true
@@ -60,6 +77,7 @@ func connectConsumer(brokers []string) (sarama.Consumer, error) {
 	return nil, fmt.Errorf("failed to connect to Kafka after %d attempts", maxRetries)
 }
 
+// / EMA200 계산
 func calculateEMA(prices []float64, period int) float64 {
 	k := 2.0 / float64(period+1)
 	ema := prices[0]
@@ -69,6 +87,7 @@ func calculateEMA(prices []float64, period int) float64 {
 	return ema
 }
 
+// / MACD 계산
 func calculateMACD(prices []float64) (float64, float64) {
 	ema12 := calculateEMA(prices, 12)
 	ema26 := calculateEMA(prices, 26)
@@ -77,6 +96,7 @@ func calculateMACD(prices []float64) (float64, float64) {
 	return macd, signal
 }
 
+// / Parabolic SAR 계산
 func calculateParabolicSAR(highs, lows []float64) float64 {
 	af := 0.02
 	maxAf := 0.2
@@ -114,6 +134,7 @@ func calculateParabolicSAR(highs, lows []float64) float64 {
 	return sar
 }
 
+// / 보조 지표 계산
 func calculateIndicators(candles []CandleData) (TechnicalIndicators, error) {
 	if len(candles) < 300 {
 		return TechnicalIndicators{}, fmt.Errorf("insufficient data: need at least 300 candles, got %d", len(candles))
@@ -155,27 +176,107 @@ func calculateIndicators(candles []CandleData) (TechnicalIndicators, error) {
 	}, nil
 }
 
-func generateSignal(candles []CandleData, indicators TechnicalIndicators) string {
+// signal 생성 함수
+func generateSignal(candles []CandleData, indicators TechnicalIndicators) (string, SignalConditions) {
 	lastPrice, _ := strconv.ParseFloat(candles[len(candles)-1].Close, 64)
 	lastHigh, _ := strconv.ParseFloat(candles[len(candles)-1].High, 64)
 	lastLow, _ := strconv.ParseFloat(candles[len(candles)-1].Low, 64)
 
-	longCondition := lastPrice > indicators.EMA200 &&
-		indicators.MACD > indicators.Signal &&
-		indicators.ParabolicSAR < lastLow
-
-	shortCondition := lastPrice < indicators.EMA200 &&
-		indicators.MACD < indicators.Signal &&
-		indicators.ParabolicSAR > lastHigh
-
-	if longCondition {
-		return "LONG"
-	} else if shortCondition {
-		return "SHORT"
+	conditions := SignalConditions{
+		Long: [3]bool{
+			lastPrice > indicators.EMA200,
+			indicators.MACD > indicators.Signal,
+			indicators.ParabolicSAR < lastLow,
+		},
+		Short: [3]bool{
+			lastPrice < indicators.EMA200,
+			indicators.MACD < indicators.Signal,
+			indicators.ParabolicSAR > lastHigh,
+		},
 	}
-	return "NO SIGNAL"
+
+	if conditions.Long[0] && conditions.Long[1] && conditions.Long[2] {
+		return "LONG", conditions
+	} else if conditions.Short[0] && conditions.Short[1] && conditions.Short[2] {
+		return "SHORT", conditions
+	}
+	return "NO SIGNAL", conditions
 }
+
+// Discord에 알림 보내는 함수
+func sendDiscordAlert(message string) error {
+	payload := map[string]string{"content": message}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", discordWebhookURL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// Slack에 알림 보내는 함수
+func sendSlackAlert(message string) error {
+	payload := map[string]string{"text": message}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", slackWebhookURL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Printf("Error loading .env file")
+		panic(err)
+
+	}
+
+	discordWebhookURL = os.Getenv("DISCORD_WEBHOOK_URL")
+	if discordWebhookURL == "" {
+		fmt.Printf("DISCORD_WEBHOOK_URL is not set in .env file")
+		panic(err)
+	}
+
+	slackWebhookURL = os.Getenv("SLACK_WEBHOOK_URL")
+	if slackWebhookURL == "" {
+		fmt.Printf("SLACK_WEBHOOK_URL is not set in .env file")
+		panic(err)
+	}
+
 	consumer, err := connectConsumer([]string{kafkaBroker})
 	if err != nil {
 		panic(err)
@@ -207,13 +308,28 @@ func main() {
 					continue
 				}
 
-				signal := generateSignal(candles, indicators)
-				fmt.Printf("Signal: %s\n", signal)
+				signal, conditions := generateSignal(candles, indicators)
 				lastCandle := candles[len(candles)-1]
+
+				if signal != "NO SIGNAL" {
+					alertMessage := fmt.Sprintf("New signal: %s for BTCUSDT at %v", signal, time.Unix(lastCandle.OpenTime/1000, 0))
+
+					if err := sendDiscordAlert(alertMessage); err != nil {
+						fmt.Printf("Error sending Discord alert: %v\n", err)
+					}
+
+					// if err := sendSlackAlert(alertMessage); err != nil {
+					// 	fmt.Printf("Error sending Slack alert: %v\n", err)
+					// }
+				}
+
+				fmt.Printf("Signal: %s\n", signal)
 				fmt.Printf("Latest candle - Open Time: %v, Close: %s\n",
 					time.Unix(lastCandle.OpenTime/1000, 0), lastCandle.Close)
-				fmt.Printf("EMA200: %.2f, MACD: %.2f, Signal: %.2f, Parabolic SAR: %.2f\n",
-					indicators.EMA200, indicators.MACD, indicators.Signal, indicators.ParabolicSAR)
+				fmt.Printf("LONG  - CASE 1: %t, CASE 2: %t, CASE 3: %t\n",
+					conditions.Long[0], conditions.Long[1], conditions.Long[2])
+				fmt.Printf("SHORT - CASE 1: %t, CASE 2: %t, CASE 3: %t\n",
+					conditions.Short[0], conditions.Short[1], conditions.Short[2])
 				fmt.Println("------------------------")
 			}
 
