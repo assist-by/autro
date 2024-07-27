@@ -175,7 +175,6 @@ func generateSignal(candles []CandleData, indicators TechnicalIndicators) string
 	}
 	return "NO SIGNAL"
 }
-
 func main() {
 	consumer, err := connectConsumer([]string{kafkaBroker})
 	if err != nil {
@@ -192,20 +191,13 @@ func main() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
-	var candles []CandleData
-
 	for {
 		select {
 		case msg := <-partitionConsumer.Messages():
-			var candle CandleData
-			if err := json.Unmarshal(msg.Value, &candle); err != nil {
+			var candles []CandleData
+			if err := json.Unmarshal(msg.Value, &candles); err != nil {
 				fmt.Printf("Error unmarshalling message: %v\n", err)
 				continue
-			}
-
-			candles = append(candles, candle)
-			if len(candles) > 300 {
-				candles = candles[1:]
 			}
 
 			if len(candles) == 300 {
@@ -217,8 +209,9 @@ func main() {
 
 				signal := generateSignal(candles, indicators)
 				fmt.Printf("Signal: %s\n", signal)
+				lastCandle := candles[len(candles)-1]
 				fmt.Printf("Latest candle - Open Time: %v, Close: %s\n",
-					time.Unix(candle.OpenTime/1000, 0), candle.Close)
+					time.Unix(lastCandle.OpenTime/1000, 0), lastCandle.Close)
 				fmt.Printf("EMA200: %.2f, MACD: %.2f, Signal: %.2f, Parabolic SAR: %.2f\n",
 					indicators.EMA200, indicators.MACD, indicators.Signal, indicators.ParabolicSAR)
 				fmt.Println("------------------------")

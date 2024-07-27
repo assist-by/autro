@@ -77,23 +77,18 @@ func fetchBTCCandleData() ([]CandleData, error) {
 }
 
 func produceToKafka(producer sarama.SyncProducer, candles []CandleData) error {
-	for _, candle := range candles {
-		jsonData, err := json.Marshal(candle)
-		if err != nil {
-			return err
-		}
-
-		msg := &sarama.ProducerMessage{
-			Topic: kafkaTopic,
-			Value: sarama.StringEncoder(jsonData),
-		}
-
-		_, _, err = producer.SendMessage(msg)
-		if err != nil {
-			return err
-		}
+	jsonData, err := json.Marshal(candles)
+	if err != nil {
+		return err
 	}
-	return nil
+
+	msg := &sarama.ProducerMessage{
+		Topic: kafkaTopic,
+		Value: sarama.StringEncoder(jsonData),
+	}
+
+	_, _, err = producer.SendMessage(msg)
+	return err
 }
 
 func connectProducer(brokers []string) (sarama.SyncProducer, error) {
