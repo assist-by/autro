@@ -1,15 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"time"
+
+	notification "consumer/notification"
 
 	"github.com/IBM/sarama"
 	"github.com/joho/godotenv"
@@ -46,12 +46,6 @@ type SignalConditions struct {
 
 var (
 	kafkaBroker string
-	httpClient  = &http.Client{Timeout: 10 * time.Second}
-)
-
-var (
-	discordWebhookURL string
-	slackWebhookURL   string
 )
 
 func init() {
@@ -203,77 +197,16 @@ func generateSignal(candles []CandleData, indicators TechnicalIndicators) (strin
 	return "NO SIGNAL", conditions
 }
 
-// Discord에 알림 보내는 함수
-func sendDiscordAlert(message string) error {
-	payload := map[string]string{"content": message}
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", discordWebhookURL, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
-// Slack에 알림 보내는 함수
-func sendSlackAlert(message string) error {
-	payload := map[string]string{"text": message}
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("POST", slackWebhookURL, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		fmt.Printf("Error loading .env file")
 		panic(err)
-
 	}
 
-	discordWebhookURL = os.Getenv("DISCORD_WEBHOOK_URL")
-	if discordWebhookURL == "" {
-		fmt.Printf("DISCORD_WEBHOOK_URL is not set in .env file")
-		panic(err)
-	}
-
-	slackWebhookURL = os.Getenv("SLACK_WEBHOOK_URL")
-	if slackWebhookURL == "" {
-		fmt.Printf("SLACK_WEBHOOK_URL is not set in .env file")
+	err = notification.InitNotifications()
+	if err != nil {
+		fmt.Printf("Error initializing notifications: %v", err)
 		panic(err)
 	}
 
@@ -311,16 +244,32 @@ func main() {
 				signal, conditions := generateSignal(candles, indicators)
 				lastCandle := candles[len(candles)-1]
 
-				if signal != "NO SIGNAL" {
-					alertMessage := fmt.Sprintf("New signal: %s for BTCUSDT at %v", signal, time.Unix(lastCandle.OpenTime/1000, 0))
+				discordColor, slackColor := notification.GetColorForSignal(signal)
 
-					if err := sendDiscordAlert(alertMessage); err != nil {
-						fmt.Printf("Error sending Discord alert: %v\n", err)
-					}
+				description := fmt.Sprintf("Signal: %s for BTCUSDT at %v\n\n"+
+					"LONG  - CASE 1: %t, CASE 2: %t, CASE 3: %t\n"+
+					"SHORT - CASE 1: %t, CASE 2: %t, CASE 3: %t",
+					signal, time.Unix(lastCandle.OpenTime/1000, 0),
+					conditions.Long[0], conditions.Long[1], conditions.Long[2],
+					conditions.Short[0], conditions.Short[1], conditions.Short[2])
 
-					// if err := sendSlackAlert(alertMessage); err != nil {
-					// 	fmt.Printf("Error sending Slack alert: %v\n", err)
-					// }
+				discordEmbed := notification.Embed{
+					Title:       fmt.Sprintf("New Signal: %s", signal),
+					Description: description,
+					Color:       discordColor,
+				}
+
+				slackAttachment := notification.Attachment{
+					Color: slackColor,
+					Text:  description,
+				}
+
+				if err := notification.SendDiscordAlert(discordEmbed); err != nil {
+					fmt.Printf("Error sending Discord alert: %v\n", err)
+				}
+
+				if err := notification.SendSlackAlert(slackAttachment); err != nil {
+					fmt.Printf("Error sending Slack alert: %v\n", err)
 				}
 
 				fmt.Printf("Signal: %s\n", signal)
