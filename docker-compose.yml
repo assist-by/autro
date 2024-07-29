@@ -41,9 +41,9 @@ services:
     environment:
       KAFKA_BROKER: kafka:9092
 
-  consumer:
+  autro-signal:
     build:
-      context: ./consumer
+      context: ./autro-signal
       dockerfile: Dockerfile
     depends_on:
       kafka:
