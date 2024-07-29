@@ -31,9 +31,9 @@ services:
       timeout: 10s
       retries: 5
 
-  producer:
+  autro-price:
     build:
-      context: ./producer
+      context: ./autro-price
       dockerfile: Dockerfile
     depends_on:
       kafka:
