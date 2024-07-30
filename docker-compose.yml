@@ -48,5 +48,17 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      autro-api-gateway:
+        condition: service_started
     environment:
       KAFKA_BROKER: kafka:9092
+      API_GATEWAY_ADDR: api-gateway:50051
+  
+  autro-api-gateway:
+    build:
+      context: ./autro-api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      PORT: 50051
