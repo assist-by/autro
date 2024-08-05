@@ -41,12 +41,26 @@ services:
     environment:
       KAFKA_BROKER: kafka:9092
 
+  autro-notification:
+    build:
+      context: ./autro-notification
+      dockerfile: Dockerfile
+    environment:
+      PORT: 50052
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+
   autro-api-gateway:
     build:
       context: ./autro-api-gateway
       dockerfile: Dockerfile
     ports:
       - "50051:50051"
+    environment:
+      PORT: 50051
+      NOTIFICATION_SERVICE_ADDR: autro-notification:50052
+    depends_on:
+      - autro-notification
 
   autro-signal:
     build:
