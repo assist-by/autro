@@ -31,12 +31,31 @@ services:
       timeout: 10s
       retries: 5
 
+  autro-service-discovery:
+    build:
+      context: ./autro-service-discovery
+      dockerfile: Dockerfile
+    ports:
+      - "8500:8500"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      PORT: 8500
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8500/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   autro-price:
     build:
       context: ./autro-price
       dockerfile: Dockerfile
     depends_on:
       kafka:
+        condition: service_healthy
+      autro-service-discovery:
         condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:9092
@@ -45,28 +64,24 @@ services:
     build:
       context: ./autro-notification
       dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+      autro-service-discovery:
+        condition: service_healthy
     environment:
       PORT: 50052
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
-
-  # autro-api-gateway:
-  #   build:
-  #     context: ./autro-api-gateway
-  #     dockerfile: Dockerfile
-  #   ports:
-  #     - "50051:50051"
-  #   environment:
-  #     PORT: 50051
-  #     NOTIFICATION_SERVICE_ADDR: autro-notification:50052
-  #   depends_on:
-  #     - autro-notification
 
   autro-signal:
     build:
       context: ./autro-signal
       dockerfile: Dockerfile
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
+      autro-service-discovery:
+        condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:9092
