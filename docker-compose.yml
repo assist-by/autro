@@ -52,9 +52,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      PORT: 8500
-      REDIS_ADDR: redis:6379
     healthcheck:
       test: ["CMD", "curl", "-f", "http://abready:8500/health"]
       interval: 30s
@@ -72,21 +69,16 @@ services:
         condition: service_healthy
       abready:
         condition: service_healthy
-    environment:
-      PORT: 50050
-      KAFKA_BROKER: kafka:9092
 
-  autro-price:
+  abprice:
     build:
-      context: ./autro-price
+      context: ./abprice
       dockerfile: Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
       abready:
         condition: service_healthy
-    environment:
-      KAFKA_BROKER: kafka:9092
 
   abnotification:
     build:
@@ -97,10 +89,6 @@ services:
         condition: service_healthy
       abready:
         condition: service_healthy
-    environment:
-      PORT: 50052
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
 
   absignal:
     build:
@@ -111,5 +99,3 @@ services:
         condition: service_healthy
       abready:
         condition: service_healthy
-    environment:
-      KAFKA_BROKER: kafka:9092
