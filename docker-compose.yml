@@ -41,9 +41,9 @@ services:
       timeout: 10s
       retries: 3
 
-  autro-service-discovery:
+  abready:
     build:
-      context: ./autro-service-discovery
+      context: ./abready
       dockerfile: Dockerfile
     ports:
       - "8500:8500"
@@ -56,7 +56,7 @@ services:
       PORT: 8500
       REDIS_ADDR: redis:6379
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://autro-service-discovery:8500/health"]
+      test: ["CMD", "curl", "-f", "http://abready:8500/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -70,7 +70,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      autro-service-discovery:
+      abready:
         condition: service_healthy
     environment:
       PORT: 50050
@@ -83,33 +83,33 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      autro-service-discovery:
+      abready:
         condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:9092
 
-  autro-notification:
+  abnotification:
     build:
-      context: ./autro-notification
+      context: ./abnotification
       dockerfile: Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
-      autro-service-discovery:
+      abready:
         condition: service_healthy
     environment:
       PORT: 50052
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
       SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
 
-  autro-signal:
+  absignal:
     build:
-      context: ./autro-signal
+      context: ./absignal
       dockerfile: Dockerfile
     depends_on:
       kafka:
         condition: service_healthy
-      autro-service-discovery:
+      abready:
         condition: service_healthy
     environment:
       KAFKA_BROKER: kafka:9092
