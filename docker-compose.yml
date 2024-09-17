@@ -58,9 +58,9 @@ services:
       timeout: 10s
       retries: 3
   
-  autro-api-gateway:
+  abgateway:
     build:
-      context: ./autro-api-gateway
+      context: ./abgateway
       dockerfile: Dockerfile
     ports:
       - "50050:50050"
