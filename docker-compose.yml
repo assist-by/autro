@@ -89,6 +89,9 @@ services:
         condition: service_healthy
       abready:
         condition: service_healthy
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
 
   absignal:
     build:
